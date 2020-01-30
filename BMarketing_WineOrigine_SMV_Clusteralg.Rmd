@@ -1,0 +1,626 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+---
+Tassy Bazile
+
+DA5030
+
+Practicum 3
+
+package
+```{r}
+require(stringi)
+```
+
+
+Problem 1
+
+Bank marketing
+
+Collecting data
+```{r}
+
+
+#bank.market<-read.csv("/Users/btassapp02/Downloads/bank/bank-full.csv", sep=";", header=T, na.strings = c(""))
+#train.bank<-bank.market
+train.bank<-read.csv("/Users/btassapp02/Downloads/bank/bank.csv",sep=";", header=T, na.strings = c("")) 
+
+# combining train and test to keep all change updated
+#bank.comb<-rbind(train.bank, test.bank )
+#class(bank.comb)
+nrow(train.bank)
+#nrow(test.bank)
+```
+
+Inspecting data
+```{r}
+str(train.bank)
+# The dataset contains both numeric and categorical features
+# Target feature y: (yes or no) whether the customer will subscribe or not.
+#checking for missing values
+anyNA(train.bank) # FALSE means No NAs
+```
+
+
+First Few rows
+```{r}
+head(train.bank)
+```
+
+
+Checking ranges and summaries
+```{r}
+summary(train.bank)
+# For most part, the numeric features'ranges vary pretty widely, and they have  different scales .
+names(train.bank)
+```
+
+Distributional skew
+For most of the features the median and the mean are sparse. This means there is distributional skew. Therefore, they are not quite normally distributed. Actually, the variable age is slightly skwed to the right
+```{r}
+#grid.arrange(g1,g2, ncol=2)
+attach(train.bank[, c(1,6,10, 12)])
+par(mfrow=c(2, 2))
+hist(age)
+# Similarly, balance, duration are right-skewed.
+hist(balance)
+hist(duration)
+#panel(bank.market[])
+#However, the variable  "day" does not indicate a simple normal distribution.
+hist(day)
+detach(train.bank[, c(1,6,10, 12)])
+```
+
+Applying a transform
+
+Analyzing the data, I noticed there are two main reasons why a transform matters. First, the data set has numeric and categorical features alike. Given the support vector machine requires that all features to be numeric, the factor variables need to be converted into numeric. Second, the features are of various scales. For the sake of accurate prediction, it is important to bring them to the same scale. In this respect, the R package used can perform rescaling automatically.
+
+Converting categorical features into numeric
+```{r}
+library(psych)
+# Given SVM requires all features to be numeric, we converted factors variables into numbers, except for the taget variable.
+# The factor variables
+train.bank.factors<-train.bank[,c(2,3,4,5,7,8,9,11,16)]
+train.bank.D<-data.frame(sapply(train.bank.factors,dummy.code))
+#bank.factors<-levels(bank.factors)[bank.factors]
+#as.numeric(bank.factors)
+#type.convert(bank.factors)
+head(train.bank.D)
+```
+
+Grouping the converted variable with the remaining of the data frame
+```{r}
+bank.proc<-cbind(train.bank[-c(2,3,4,5,7,8,9,11,16)], train.bank.D)
+str(bank.proc)
+```
+Separating train and test
+```{r}
+# Now all transform has been perform, it is reasonable to plit train and test.
+#The same data set is used for both train and test
+train_bank.proc<-bank.proc
+
+test_bank.proc<-bank.proc
+```
+
+Question 3
+
+Classification Model with Vector Support Machine
+
+Training the Model
+```{r}
+library(kernlab)
+bank.sub.classifier<-ksvm(y ~., data=train_bank.proc, kernel="vanilladot")
+bank.sub.classifier # We have an error of 0.107 which seems low
+```
+Evaluation of the Model
+```{r}
+bank_sub_pred<-predict(bank.sub.classifier, test_bank.proc)
+head(bank_sub_pred)
+```
+Comparind predicted responses to true responses in the testing data set
+```{r}
+table(bank_sub_pred, test_bank.proc$y)
+```
+
+Checking whether the model'predicted reponses agrees the actual response
+```{r}
+agreements<-bank_sub_pred==test_bank.proc$y
+table(agreements)
+```
+
+Agreement expressed in percentage
+```{r}
+prop.table(table(agreements))
+# The accuracy is 89.3%
+```
+Improving the model
+```{r}
+# Using the non linear function Gaussian RBF
+bank.sub.classifier_rbf<-ksvm(y ~., data=train_bank.proc, kernel="rbfdot")
+bank.sub.classifier_rbf
+```
+Prediction with RFB
+```{r}
+bank_sub_pred_rfb<-predict(bank.sub.classifier_rbf, test_bank.proc)
+#head(bank_sub_pred_rfb)
+#Confusion matrix
+table(bank_sub_pred_rfb, test_bank.proc$y)
+# Agreements
+agreement_rfb<-bank_sub_pred_rfb==test_bank.proc$y
+#Accuracy
+table(agreement_rfb)
+prop.table(table(agreement_rfb)) # improvement: the accuracy is now 91.35%
+```
+ 
+ Question 1.4
+ 
+ Classification with Artifial Neural Network
+ 
+The neural network classifiction performs better when all input data are scaled to a narrow range. From the above mentioned inspection, it shows that the values are ranging anywhere from zero to over  on hundred thousand. To circumvent this problem we could rescale the data by with normalization or standization. Since the data seem not follow a quite normal distribution, we normalize them within a zero 0-1 range.
+```{r}
+normalize<-function(x){
+  return((x-min(x))/(max(x)-min(x)))
+}
+```
+ 
+Insuring that all features and the target variable are numeric
+```{r}
+
+# For the target variable "y": whether the customer would subscribe, we assign 1 for yes, and 0 for no.
+bank.proc$y_subscribe<-ifelse(bank.proc$y=="no",0, 1)
+head(bank.proc)
+# Then we removed "y" and kept "y_subscribe" to simplify the data set
+bank.proc1<-subset(bank.proc, select=-y) # y is qualitative
+# Data set bank.proc1 is subject to processing and partitionning
+
+```
+
+Normalizing data
+```{r}
+bank_norm<-as.data.frame(lapply(bank.proc1, normalize))
+# confirming the the effectiveness of the normalization
+summary(bank_norm$balance)
+summary(bank_norm$loan.no)
+```
+
+ Partitioning the data once again
+```{r}
+
+train_bank_norm<-bank_norm
+
+test_bank_norm<-bank_norm
+```
+ 
+ Training the Model
+```{r}
+set.seed(123)
+library(neuralnet)
+# The simplest multilayer feedforward: neural network with single hidden node (resembles to regression model)
+bank_ann_model1<-neuralnet(y_subscribe~., data=train_bank_norm)
+plot(bank_ann_model1)
+# There is one input node for each of the features
+# bias terms: -0.84825 and 0.01035
+
+```
+ Evaluation of the model's performance
+```{r}
+ann_model_results<-compute(bank_ann_model1, test_bank_norm)
+predict_subcribe<-ann_model_results$net.result
+cor(predict_subcribe, test_bank_norm$y_subscribe)
+# The correlation is greater than 50%, there is relative strong linear relationship between two variables
+```
+ Improving the model
+```{r}
+# Given there many feature, we chose 2 as le number of hidden layer
+bank_ann_model2<-neuralnet(y_subscribe~., data=train_bank_norm, hidden=2)
+plot(bank_ann_model2)
+```
+ Evaluation of model 2
+```{r}
+ann_model2_results<-compute(bank_ann_model2, test_bank_norm)
+predict_subcribe2<-ann_model2_results$net.result
+cor(predict_subcribe2, test_bank_norm$y_subscribe)
+# The model has improved a little by generating a stronger correlation, which is 0.63
+```
+ Compring predicted results and actual results
+```{r}
+results_ann2<-data.frame(actual=test_bank_norm$y_subscribe, prediction=predict_subcribe2)
+head(results_ann2)
+```
+Confusion Matrix
+```{r}
+roundedresults<-sapply(results_ann2,round,digits=0)
+roundedresultsdf=data.frame(roundedresults)
+attach(roundedresultsdf)
+table(actual,prediction)
+# The model generated 3838 true negatives (0's) and 212 true positives (1's)
+```
+Estimating Accuracy
+```{r}
+TN=3883
+TP=297
+Total=sum(table(actual,prediction))
+Accuracy_ann= (TN+TP)/Total
+Accuracy_ann # Accuracy= 92.7%
+```
+Conclusion
+From the two models, the support machine vector model provided a slightly greater (92.7% ) accuracy than the neural network's one (91.35%). Note that the ANN model was implemented with two hidden layers.
+
+
+
+
+Problem 2
+
+Origines of Wines 
+
+Loading data
+```{r}
+wines<-read.csv("/Users/btassapp02/Downloads/wine.data", sep=",", header=F, na.strings = c(""))
+class(wines)
+```
+
+
+Inspecting the data
+
+```{r}
+str(wines)
+#naming columns
+
+```
+Naming features
+```{r}
+colnames(wines)<-c("Class", "Alcohol","Malic acid", "Ash", "Alcalinity of ash", "Magnesium", "Total phenols", "Flavonoids", "Nonflavonoid phenols", "Proanthocyanins", "Color intensity", "Hue", "OD280/OD315 of diluated wines", "Proline")
+# First Few Rows of the data set
+head(wines)
+```
+Summary
+```{r}
+summary(wines)
+anyNA(wines)
+```
+
+
+Splitting data
+```{r}
+library(caTools)
+library(ggplot2)
+set.seed(101)
+wines.spl<-sample.split(wines, SplitRatio=0.67, group=NULL)
+train_wines = subset(wines, wines.spl == TRUE)
+test_wines  = subset(wines, wines.spl == FALSE)
+#wines.spl<-sample.split(wines[1], SplitRatio=0.67)
+#train_wines = wines[wines.spl == TRUE,]
+#test_wines  = wines[wines.spl == FALSE,]
+# nrow(test_wines) # 61
+#ifelse with more than two conditions
+#hist(wines$Class, freq=F,col= "blue")
+#teens$age<-ifelse(teens$age>=13 & teens$age<20, teens$age, NA)
+
+train1<-train_wines$Class
+test2<-test_wines$Class
+# converting the values 1, 2, and 3 of Class to Class1, Class2, Class3
+wines$Class_c<-ifelse(wines$Class==1,"Class1", ifelse(wines$Class == 2, "Class2", "Class3"))
+#Appling the classes'names to train and test
+#train_1<-as.data.frame(train_wines$Class_c)
+#train_1$ClassC<-train_1$`train_wines$Class_c`
+#train_1$`train_wines$Class_c`<-NULL
+#test_1<-as.data.frame(test_wines$Class_c)
+#test_1$ClassC<-test_1$`test_wines$Class_c`
+#test_1$`test_wines$Class_c`<-NULL
+#part_split<-as.vector(rbind(train_1,test_1))
+
+#wines1<-cbind(wines,part_split)
+
+#p<- ggplot(data=wines1, aes(Class,fill=part_split,y=..prop.., group=1))
+p<- ggplot(data=wines, aes(Class,y=..prop.., group=1))
+p + geom_bar(aes(fill=Class)) + labs(title="Distribution of classes", x= "Classes", y="Proportion")
+ # p+ geom_bar() + labs(title="Distribution of classes", x= "Classes", y="Proportion")
+         
+
+ #prop.table(table(wines$Class_c)    
+```
+
+
+Clustering by Elbow method
+This method looks at the percentage of variance explained by the number of clusters
+
+Recalling the columns'names
+```{r}
+names(wines)
+```
+
+Elbow method
+Elbow method for finding the optimum number of cluster to use
+
+```{r}
+library(factoextra)
+library(NbClust)
+library(ggplot2)
+# Elbow method
+wines1<-wines[,-c(15, 16)]
+fviz_nbclust(wines1, kmeans, method = "wss") +
+    geom_vline(xintercept = 4, linetype = 2)+
+  labs(subtitle = "Elbow method")
+# We shose k=3, given the sum wss doesn't signifcantly decrease after k=3
+```
+
+
+Raw data and Euclidian Distance
+
+```{r}
+library(cclust)
+# Finding the within cluster sum of square
+set.seed(100)
+wcss <- (nrow(wines[1:14])-1)*sum(apply(wines[1:14],2,var))
+for (i in 2:100) {wcss[i] <- sum(cclust(as.matrix(wines[1:14]),centers=i,iter.max = 100,
+verbose=FALSE, dist="euclidean", method = "kmeans")$withinss)} # running a kmeans cluster for the data one time each for each value of centers (number of centroids we want) from 2 to 100 and reading the $withinss. Then, sums all the withinss up.
+plot(1:100,wcss, type="b", xlab="Number of Clusters",
+ylab="Within groups sum of squares")
+```
+Looking for L1[[3]]
+```{r}
+
+# Minimal wcss
+L33<-as.vector(wcss)
+# Order the above vector
+L1<-as.list(wcss[order(L33)])
+L1
+L1[[3]] # among the three minimal wcss
+
+```
+
+
+
+Finding Cluster with k=3
+```{r}
+set.seed(100)
+library(cclust)
+set.seed(100)
+#train
+omat<-as.matrix(train_wines[-c(15,16)])
+chosenpred1_train_euc<-cclust (x=omat, centers=3, iter.max=100, verbose=FALSE, dist="euclidean",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+chosenpred1_train_euc=kmeans(train_wines[-c(15,16)], 3)
+
+table(train_wines[,1],chosenpred1_train_euc$cluster )
+
+#For the test
+omat1<-as.matrix(test_wines[,c(1:14)])
+chosenpred1_test_euc<-cclust (x=omat1, centers=3, iter.max=100, verbose=FALSE, dist="euclidean",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+
+table(test_wines[,1],chosenpred1_test_euc$cluster )
+# Accuracy 
+
+```
+
+Accuracy
+```{r}
+#Train
+train_TPTN=28+32+20 # True positive and true negative
+train_FPFN=12+1+11+14 # false positive and false negative
+train_Accu=train_TPTN/(train_FPFN+train_TPTN)
+train_Accu # 72%
+
+# Test
+test_TPTN=0+4+0
+test_FPFN=20+16+20
+test_Acc=test_TPTN/(test_FPFN+test_FPFN)
+test_Acc# 72
+```
+
+Visualizing results
+```{r}
+#distance1<-sqrt(rowSums(train_wines[-c(15,16)]-fitted(pred_train))^2)
+train_wines$cluster <-as.factor(chosenpred1_train_euc$cluster)
+#train_wines$distance<-train_wines$Class-pred_train$totss
+#train_wines$distance<-sqrt((train_wines$Class-pred_train$totss)^2)
+#train_wines$distance<-sqrt(rowSums(train_wines[-c(15,16)]-fitted(pred_train))^2)
+train_wines$distance_from_centroid<-sqrt(rowSums(train_wines[,c(1:14)]-fitted(chosenpred1_train_euc))^2)
+a<-ggplot(train_wines, aes(x= cluster, y= distance_from_centroid,  color=as.factor(Class)))
+a + geom_point() + geom_jitter(width=.5, size=1)+ ggtitle("Distance from Closest Cluster Centroid - train set")
+
+```
+
+For the test
+```{r}
+test_wines$cluster <- as.factor(chosenpred1_test_euc$cluster)
+#train_wines$distance<-train_wines$Class-pred_train$totss
+#train_wines$distance<-sqrt((train_wines$Class-pred_train$totss)^2)
+#train_wines$distance<-sqrt(rowSums(train_wines[-c(15,16)]-fitted(pred_train))^2)
+test_wines$distance_from_centroid<-sqrt(rowSums(test_wines[,c(1:14)]-chosenpred1_test_euc$centers)^2)
+b<-ggplot(test_wines, aes(x= cluster, y= distance_from_centroid, , color=as.factor(Class))) 
+b + geom_jitter(width=.5, size=1) +geom_point() + ggtitle("Distance from Closest Cluster Centroid - test set")
+```
+Raw data and Manhattan Distance
+
+Use of ccclust package
+Train data set 
+```{r}
+# 
+set.seed(123)
+om<-as.matrix(train_wines[-c(15,16,17)])
+chosenpred1_train_manh<-cclust(x=om, centers=3, iter.max=100, verbose=FALSE, dist="manhattan",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+table(train_wines[,1],chosenpred1_train_manh$cluster)
+```
+Test data set 
+```{r}
+set.seed(123)
+om1<-as.matrix(test_wines[-c(15,16,17)])
+chosenpred1_test_manh<-cclust (x=om1, centers=3, iter.max=100, verbose=FALSE, dist="manhattan",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+table(test_wines[,1],chosenpred1_test_manh$cluster)
+```
+
+Visualization
+```{r}
+#Train
+train_wines$clusterma <-as.factor(chosenpred1_train_manh$cluster)
+train_wines$distance_from_centroidma<-sqrt(rowSums(chosenpred1_train_manh$centers-train_wines[,c(1:14)])^2)
+
+c<-ggplot(train_wines, aes(x= clusterma, y= distance_from_centroidma,color=as.factor(Class)))
+c + geom_point() + geom_jitter(width=.5, size=1) +ggtitle("Distance from Closest Cluster Centroid - train set")
+```
+Visualization for test
+```{r}
+test_wines$clusterma <-as.factor(chosenpred1_test_manh$cluster)
+test_wines$distance_from_centroidma<-sqrt(rowSums(chosenpred1_test_manh$centers-test_wines[,c(1:14)])^2)
+
+d<-ggplot(test_wines, aes(x= clusterma, y= distance_from_centroidma, color=as.factor(Class))) 
+  d+geom_point() +  geom_jitter(width=.5, size=1) + ggtitle("Distance from Closest Cluster Centroid - train set")
+```
+Scaled data in Euclidean distance
+```{r}
+
+wines1<-data.frame(lapply(wines[,2:14], scale))
+
+str(wines1)
+```
+
+Splitting
+```{r}
+require(caTools)
+set.seed(123)
+wines2<-cbind(wines[1],wines1)
+wines.spl1<-sample.split(wines2, SplitRatio=0.67, group=NULL)
+train_wines1 = subset(wines2, wines.spl1 == TRUE)
+test_wines1  = subset(wines2, wines.spl1 == FALSE)
+```
+
+Clustering
+```{r}
+set.seed(100)
+# Train
+chosen_pred2train<-cclust (x=as.matrix(train_wines1), centers=3, iter.max=100, verbose=FALSE, dist="euclidean",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+
+
+table(train_wines1[,1],chosen_pred2train$cluster )
+
+# Test
+chosen_pred2test<-cclust (x=as.matrix(test_wines1), centers=3, iter.max=100, verbose=FALSE, dist="euclidean",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+
+
+table(test_wines1[,1],chosen_pred2test$cluster )
+```
+Visualization
+```{r}
+#Train
+train_wines1$cluster <-as.factor(chosen_pred2train$cluster)
+train_wines1$distance_from_centroid<-sqrt(rowSums(chosen_pred2train$centers-train_wines1[,c(1:14)])^2)
+
+d<-ggplot(train_wines1, aes(x= cluster, y= distance_from_centroid, color=as.factor(Class))) 
+  d+geom_point() +  geom_jitter(width=.5, size=1) + ggtitle("Distance from Closest Cluster Centroid - train set")
+  # The clusters are more visible with scaled data
+```
+Test
+```{r}
+#Test
+test_wines1$cluster <-as.factor(chosen_pred2test$cluster)
+test_wines1$distance_from_centroid<-sqrt(rowSums(chosen_pred2test$centers-test_wines1[,c(1:14)])^2)
+
+d<-ggplot(test_wines1, aes(x= cluster, y= distance_from_centroid, color=as.factor(Class))) 
+  d+geom_point() +  geom_jitter(width=.5, size=1) + ggtitle("Distance from Closest Cluster Centroid - test set")
+  # The clusters are more visible with scaled data
+```
+Scaled data with Manhattan Distance
+```{r}
+library(cclust)
+set.seed(100)
+# Train
+chosen_pred2trainmah<-cclust (x=as.matrix(train_wines1[1:14]), centers=3, iter.max=100, verbose=FALSE, dist="manhattan",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+
+
+table(train_wines1[,1],chosen_pred2trainmah$cluster )
+
+# Test
+chosen_pred2testmah<-cclust (x=as.matrix(test_wines1[1:14]), centers=3, iter.max=100, verbose=FALSE, dist="manhattan",
+        method= "kmeans", rate.method="polynomial", rate.par=NULL)
+
+
+table(test_wines1[,1],chosen_pred2testmah$cluster )
+# Significant improvement in accuracy
+```
+Visualization
+```{r}
+#Train
+train_wines1$clusterma <-as.factor(chosen_pred2trainmah$cluster)
+train_wines1$distance_from_centroidma<-sqrt(rowSums(chosen_pred2trainmah$centers-train_wines1[,c(1:14)])^2)
+
+d1<-ggplot(train_wines1, aes(x= clusterma, y= distance_from_centroidma, color=as.factor(Class))) 
+  d1+geom_point() +  geom_jitter(width=.5, size=1) + ggtitle("Distance from Closest Cluster Centroid - train set")
+```
+Test
+```{r}
+#Train
+test_wines1$clusterma <-as.factor(chosen_pred2testmah$cluster)
+test_wines1$distance_from_centroidma<-sqrt(rowSums(chosen_pred2testmah$centers-test_wines1[,c(1:14)])^2)
+
+d2<-ggplot(test_wines1, aes(x= clusterma, y= distance_from_centroidma, color=as.factor(Class))) 
+  d2+geom_point() +  geom_jitter(width=.5, size=1) + ggtitle("Distance from Closest Cluster Centroid - train set")
+```
+Principal Component Analysis
+```{r}
+library(factoextra)
+wines_pca<-prcomp(train_wines1[1:14], scale=TRUE)
+pca_sum<-summary(wines_pca)
+pca_sum
+
+
+# The fisrt componant has a greater variance
+```
+Visualisation of eigen vales
+```{r}
+require(devtools)
+fviz_eig(wines_pca)
+# Illustrating the percentage of variance explained by each component
+
+```
+Variances by compoents
+```{r}
+stdev<-wines_pca$sdev # standard deviation
+pr_var<<-stdev^2
+#variance for first three component
+#pr_var[1:3] #[1] 5.105268 2.214566 1.326892
+# Proportion of variance
+prop_var<-pr_var/sum(pr_var)
+plot(prop_var, xlab="principal component analysis", ylab="Poportion of variance", type="b")
+```
+Prediction
+```{r}
+pred_pca<-predict(wines_pca, newdata=test_wines1)
+pred_pca1<-as.data.frame(pred_pca)
+head(pred_pca1[,1:5])
+```
+Retaining First two component
+```{r}
+kmeans(train_wines1, 2, nstart=25)
+```
+Checking for the test
+```{r}
+clust_pca<-kmeans(test_wines1, 2, nstart=25)
+clust_pca
+table(test_wines1[,1], clust_pca$cluster)
+# Accuracy 48/64 ie 75%
+```
+Visualization
+```{r}
+test_wines1$clusterpca <-as.factor(clust_pca$cluster)
+test_wines1$distance_from_centroidpca<-sqrt(rowSums(clust_pca$centers-test_wines1[,c(1:14)])^2)
+
+d2<-ggplot(test_wines1, aes(x= clusterpca, y= distance_from_centroidpca, color=as.factor(Class))) 
+  d2+geom_point() +  geom_jitter(width=.5, size=1) + ggtitle("Distance from Closest Cluster Centroid - train set")
+```
+Independent Principal Component
+```{r}
+
+```
+

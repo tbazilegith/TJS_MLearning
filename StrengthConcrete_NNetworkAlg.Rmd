@@ -1,0 +1,134 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+Tassy Bazile
+
+DA5030
+
+Strength of Concrete
+
+Problem 1
+
+Artificial Neural Network
+
+Step 1
+
+Collecting data
+```{r}
+concrete<-read.csv("/Users/btassapp02/Downloads/concrete.csv", header = T, sep = ",")
+class(concrete)
+```
+Step 2
+Exploring and preparing data
+
+Investigating the data
+```{r}
+str(concrete)
+```
+
+Checking range
+```{r}
+summary(concrete)
+```
+
+The range of the data are quite wide, it might be necessary to apply normalization
+```{r}
+normalize<-function(x){
+  return((x-min(x))/(max(x)-min(x)))
+}
+```
+
+Applying normalization
+```{r}
+concreteN<-as.data.frame(lapply(concrete, normalize))
+```
+
+Confirming normalization
+```{r}
+summary(concreteN$water)
+summary(concreteN$strength)
+# mean and median are close, meaning a relative normal distribution
+```
+Partitioning the data
+```{r}
+set.seed(12345)
+concrete_train<-concreteN[1:773,]
+concrete_test<-concreteN[774:1030,]
+```
+Step 3
+Training the model
+Analyzing the relationship between the ingredients used in the concrete and the strength of the finished product by the use of multilayer feedforward neural network
+```{r}
+library(neuralnet)
+
+# simplest multilayer feedforward network with only one single hidden node
+concrete_model<-neuralnet(strength ~ cement+slag+ash+water+superplastic+coarseagg+fineagg+age, data = concrete_train)
+
+# visualization of the network typology
+plot(concrete_model)
+
+```
+
+-There is one input node for each feature, followed by a single hidden node, and a single output node that predicts the concrete strength.
+- Weight for each connection: bias terms - node labeled 1 (numeric constants like intercept in linear equation), allows values of indicated nodes to shift upward or downward
+- Weight between each input node and hidden node: similar to regression coefficients
+_ Single hidden node Neural network: distant cousin of linear regression
+- Error: sum of squared error (SSE)
+- Lower SSE implies better predictive performance
+_ Helpfull for estimating performance on training data
+
+Step 4
+Evaluation of the Model Performance
+```{r}
+# Checking how well the model will fit feature data
+# Use of compute() to generate prediction on test data
+model_results<-compute(concrete_model, concrete_test[,1:8])
+#compute() return a list of two components: $neurons( or neurons for each layer of the network), and $net.result ( predicted values)
+head(model_results)
+```
+A look at predict
+```{r}
+predicted_strength<-model_results$net.result
+head(predicted_strength)
+```
+Given it is a numeric prediction and not classification problem, confusion matrix is being used here to examine accuracy.
+Rather, we use correlation between the predicted concrete strength  and true values.
+```{r}
+cor(predicted_strength, concrete_test$strength)
+```
+A relatively trong correlation between the strength of the concrete and the features ingredients.
+
+Improving the model with more hidden node
+```{r}
+concrete_model2<-neuralnet(strength ~ cement+slag+ash+water+superplastic+coarseagg+fineagg+age, data = concrete_train, hidden=5)
+plot(concrete_model2)
+```
+
+Checking the result once again
+```{r}
+model_results2<-compute(concrete_model, concrete_test[,1:8])
+head(model_results2)
+```
+Likewise the prediction
+```{r}
+predicted_strength2<-model_results2$net.result
+cor(predicted_strength2, concrete_test$strength)
+```
+Same level of correlation, perhaps weed more hidden nodes. 
+```{r}
+concrete_model3<-neuralnet(strength ~ cement+slag+ash+water+superplastic+coarseagg+fineagg+age, data = concrete_train, hidden=7)
+plot(concrete_model3)
+
+```
+
+Checking results
+```{r}
+model_results3<-compute(concrete_model, concrete_test[,1:8])
+predicted_strength3<-model_results3$net.result
+cor(predicted_strength3, concrete_test$strength)
+
+```
+No improvement.

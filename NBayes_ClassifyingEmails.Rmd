@@ -1,0 +1,245 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Tassy Bazile
+
+DA5030
+
+Assignment 4 Classiying Emails
+
+Step 1
+Collecting data
+```{r}
+df.sms<-read.csv("/Users/btassapp02/Downloads/da5030.spammsgdataset.csv",stringsAsFactors = FALSE)
+```
+Step 2
+Exploring the data
+```{r}
+str(df.sms)
+```
+
+Converting categorical variable into factor
+```{r}
+# converting type to character
+df.sms$type<-factor(df.sms$type)
+# Examining how the variable behaves then
+str(df.sms) # type is a factor of two levels
+table(df.sms$type) # 747 sms have been labeled spam
+```
+Creating a Corpus using the VCorpus() function to obtain a collectection of sms messages
+```{r}
+library(tm)
+# We nested the function VectorSource() to specify the source of the document, our loaded data.frame.
+sms_corpus<-VCorpus(VectorSource(df.sms$text))
+# Printing sms_corpus
+sms_corpus # it contains document for each of the 5574 SMS messages
+```
+
+Selecting documents in the corpus
+```{r}
+# A summary of the first 3 SMS messages
+inspect(sms_corpus[1:3])
+```
+Viewing Actual Messages
+```{r}
+#The second Message
+as.character(sms_corpus[[2]])
+# Multiple documents
+lapply(sms_corpus[1:3], as.character)
+```
+Standardizing
+Tidying (clean up) the Corpus
+```{r}
+# Standardize messages to lowercase characters
+sms_corpus_clean<-tm_map(sms_corpus,content_transformer(tolower))
+as.character(sms_corpus[[2]]) # For checking and compare
+as.character(sms_corpus_clean[[2]])
+```
+
+Removing useless numbers and filler  words (stop words) ...
+```{r}
+sms_corpus_clean<-tm_map(sms_corpus_clean, removeNumbers) # numbers
+sms_corpus_clean<-tm_map(sms_corpus_clean, removeWords, stopwords()) # we can specify stopwords to remove
+sms_corpus_clean<-tm_map(sms_corpus_clean, removePunctuation) # to remove punctuation, but can unintendedly join words
+# It's better to recreate a replacePunctuation function
+#replacePunctuation<-function(x){
+#  gsub("[[:punct:]]+", " ", x )
+#} # to substitute any punctuation in x with a blank space
+#sms_corpus_clean<-tm_map(sms_corpus_clean, replacePunctuation)
+
+```
+# Stemming to transform word into base form
+```{r}
+library(SnowballC)
+wordStem(c("learn", "learned", "learning", "learns")) # "learn""
+# Applying wordStem function() to the entire corpus
+sms_corpus_clean<-tm_map(sms_corpus_clean, stemDocument) # use of stemDocument() transformation
+# Removing the generated blank spaces with the stripeWhitespace() function
+sms_corpus_clean<-tm_map(sms_corpus_clean, stripWhitespace)
+```
+
+Comparing sms_corpus before and sms_corpus_clean after standardization
+```{r}
+lapply((sms_corpus[1:3]),as.character)
+lapply((sms_corpus_clean[1:3]),as.character)
+```
+Splitting text documents into words
+```{r}
+#Creating a data structure with the corpus where rows are sms and columns are words: sparse matrix
+sms_dtm<-DocumentTermMatrix(sms_corpus_clean)# This contains tokenized corpus with default settings and apply minimal processing.It's used with manually prepared corpus.
+sms_dtm
+
+# Without preprocessing
+sms_dtm2<-DocumentTermMatrix(sms_corpus, list(tolower=TRUE, removeNumbers=TRUE, stopwords=TRUE, removePunctuation=TRUE,stemming=TRUE)) # Same preprocessing steps in the same order.
+sms_dtm2
+# Discrepancy: due to small difference in ordering.DocumentTermMatrix() applies cleanup only after words splitting
+
+```
+Forcing the two documents term matrices to be identical
+```{r}
+#stopwords<-function(x){ removeWords(x, stopwords()) } 
+sms_dtm3<-DocumentTermMatrix(sms_corpus, list(tolower=TRUE, removeNumbers=TRUE, stopwords=function(x){ removeWords(x, stopwords()) }, removePunctuation=TRUE, stemming=TRUE))
+sms_dtm3
+```
+Creating training and test data sets
+It's important to clean data before partionning
+```{r}
+# Specific range of rows for all columns
+sms_dtm_train<-sms_dtm[1:4181, ] # 75% of the data
+sms_dtm_test<-sms_dtm[4182:5574, ] # 25% of the data
+# Saving a pair of vector with labels from original data frame
+sms_train_labels<-df.sms[1:4181, ]$type
+sms_test_labels<-df.sms[4182:5574, ]$type
+```
+
+Comparing proportion of spam in the training and test data sets
+```{r}
+# This helps confirm that the subsets are representative of complete data set
+prop.table(table(sms_train_labels))
+prop.table(table(sms_test_labels))
+ # Both the train and the test data have 13% of the spam, suggesting an even distribution between the two data sets.          
+```
+
+Visualizing Text Data
+Word Cloud
+```{r}
+library(wordcloud)
+wordcloud(sms_corpus_clean, min.freq = 75, random.order = FALSE)
+# Word Cloud: more frequent words are largers, less frequent ones smaller
+# A word must be found in at least 1% ( minimal frequence:75/5579) of SMS messages to appear on the cloud.
+```
+
+Comparing Cloud for SMS spam and ham
+```{r}
+# subsetting the df.sms by SMS type
+spam<-subset(df.sms, type=="spam")
+ham<-subset(df.sms, type=="ham")
+wordcloud(spam$text,max.words = 40, scale=c(3, 0.5) ) # max.word to look at 40 most common words; scale to adjust maximum and minimum font size in the cloud
+wordcloud(ham$text,max.words = 40, scale=c(3, 0.5) ) 
+```
+The left cloud reflects characteristics of spam SMS messages, featuring words such as urgent, free, mobile etc.
+
+Creating Indicator features for frequent words
+```{r}
+#transforming the sparse matrix into data structure to use to train the Naive Bayes Classifier
+
+sms_freq_words<-findFreqTerms(sms_dtm_train, 5) # Eliminating words that appear in less than 5 SMS or 0.01 percent of record in training data
+str(sms_freq_words) # There are 1161 words that appear in at least 5 SMS
+```
+
+Filtering the DTM to include only terms apparearing in a specified vector
+```{r}
+# We meed only the column representing the words in "sms_freq_words" for all rows
+sms_dtm_freq_train<-sms_dtm_train[,sms_freq_words]
+sms_dtm_freq_test<-sms_dtm_test[,sms_freq_words]
+# Thew training set has 1161 features, which correspond to words apparearing in at least 5 SMS messages.
+```
+
+Naive Bayes classifier applies on categorical features.
+Sparse matrix are numeric and measure number of time
+```{r}
+# Changing categorical variables using the convert_count() function
+convert_counts<-function(x){
+  x<-ifelse(x > 0, "Yes", "No")
+}
+# Apply convert_counts to each column of the sparse matrix
+sms_train<-apply(sms_dtm_freq_train, MARGIN = 2, convert_counts) # apply() function uses the MARGIN parameter for either row(MARGIN=1) or column (MARGIN=2)
+sms_test<-apply(sms_dtm_freq_test, MARGIN = 2, convert_counts)
+# Output: two character type matrices with cells indicating "Yes" or "No"
+```
+ Step 3
+ Training a model on the data
+```{r}
+library(e1071)
+# Application of the Naive Bayes Algorithm
+# Based on presence or absence of words to estimate probability
+# 1. Building classifier
+sms_classifier<-naiveBayes(sms_train, sms_train_labels) # This can be used to make prediction
+```
+ Step 4
+ Evaluating Model Performance
+```{r}
+# The SMS classifier is evaluated on unseen messages, stored in matrix sms_test
+# class labels stored in sms_test_labels
+# The trained classifier, sms-classifier is used to generate prediction, and compared predicted values with true values
+sms_test_pred<-predict(sms_classifier, sms_test)
+```
+ 
+Comparison of predictions and true values using CrossTable() function
+```{r}
+library(gmodels)
+CrossTable(sms_test_pred, sms_test_labels, prop.chisq = FALSE, prop.t = FALSE, ddn=c('predicted', 'actual'))
+```
+The table indicates that a total of 29 (or 9 + 20) of the 1393 text messages were incorrectly classified. Among the errors, 9 out of 1211 ham SMS were misidentified as spam; and 20 out of 182 spam SMS were incorrectly labeled ham.
+
+Step 6
+Improving the Model Performance
+```{r}
+# adding the Laplace estimator to the classifier
+sms_classifier2<-naiveBayes(sms_train, sms_train_labels, laplace = 1)
+sms_test_pred2<-predict(sms_classifier2, sms_test)
+# Then, by comparing the predictions with the actual values:
+CrossTable(sms_test_pred2, sms_test_labels, prop.chisq = FALSE, prop.t = FALSE, ddn=c('predicted', 'actual'))
+```
+The Laplace estimator has allowed to reduce to number of false positice from 9 to 7, While this seems to be a small change. It is substantial, considering the model's accuracy is already impressive.
+
+Problem 2
+Naive Bayes Classification with klaR package
+```{r}
+library(klaR)
+data(iris) # Loading R built_in data iris
+nrow(iris) # Checking rows
+summary(iris)
+```
+First Few rows
+```{r}
+head(iris)
+```
+
+
+Selecting the length of iris species whose  row is a multiple of five
+```{r}
+testidx <- which(1:length(iris[, 1]) %% 5 == 0)
+
+# separate into training and testing datasets
+iristrain <- iris[-testidx,]
+iristest <- iris[testidx,] # length species in row multiple of five
+```
+
+# apply Naive Bayes
+```{r}
+nbmodel <- NaiveBayes(Species~., data=iristrain) # fitting the model
+```
+
+# check the accuracy
+```{r}
+prediction <- predict(nbmodel, iristest[,-5]) # Evaluating the model by removing the outcome variable from the test data
+table(prediction$class, iristest[,5]) # Confusion matrix, breaking down the predictions by species
+```
+
+`
+
